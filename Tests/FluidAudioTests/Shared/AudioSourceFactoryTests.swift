@@ -31,7 +31,7 @@ final class AudioSourceFactoryTests: XCTestCase {
     func testConversionFailureRemovesWrittenScratchAndPreservesOriginal() throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        let input = root.appendingPathComponent("input.wav")
+        let input = root.appendingPathComponent("input.m4a")
         let original = try Data(contentsOf: input)
         var scratch: URL?
         defer { if let scratch { try? FileManager.default.removeItem(at: scratch) } }
@@ -52,7 +52,7 @@ final class AudioSourceFactoryTests: XCTestCase {
     func testCancellationAfterScratchCreationRemovesIt() async throws {
         let root = try fixture()
         defer { try? FileManager.default.removeItem(at: root) }
-        let input = root.appendingPathComponent("input.wav")
+        let input = root.appendingPathComponent("input.m4a")
         let original = try Data(contentsOf: input)
         let task = Task.detached {
             let factory = AudioSourceFactory()
@@ -99,6 +99,15 @@ final class AudioSourceFactoryTests: XCTestCase {
         settings[AVLinearPCMIsNonInterleaved] = false
         let file = try AVAudioFile(forWriting: root.appendingPathComponent("input.wav"), settings: settings)
         try file.write(from: buffer)
+        let compressed = try AVAudioFile(
+            forWriting: root.appendingPathComponent("input.m4a"),
+            settings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 48_000,
+                AVNumberOfChannelsKey: 2,
+                AVEncoderBitRateKey: 128_000,
+            ])
+        try compressed.write(from: buffer)
         try "keep".write(to: root.appendingPathComponent("unrelated.raw"), atomically: true, encoding: .utf8)
         return root
     }
