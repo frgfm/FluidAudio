@@ -12,6 +12,14 @@ public struct AudioSourceFactory {
         from url: URL,
         targetSampleRate: Int
     ) throws -> (source: DiskBackedAudioSampleSource, loadDuration: TimeInterval) {
+        try makeDiskBackedSource(from: url, targetSampleRate: targetSampleRate, convert: streamConvert)
+    }
+
+    func makeDiskBackedSource(
+        from url: URL,
+        targetSampleRate: Int,
+        convert: (AVAudioFile, AVAudioConverter, FileHandle) throws -> Int
+    ) throws -> (source: DiskBackedAudioSampleSource, loadDuration: TimeInterval) {
         do {
             let startTime = Date()
 
@@ -27,6 +35,12 @@ public struct AudioSourceFactory {
             let tempURL = try makeTemporaryURL()
             guard FileManager.default.createFile(atPath: tempURL.path, contents: nil) else {
                 throw AudioSourceError.processingFailed("Failed to create temporary audio buffer at \(tempURL.path)")
+            }
+            var sourceOwnsFile = false
+            defer {
+                if !sourceOwnsFile {
+                    try? FileManager.default.removeItem(at: tempURL)
+                }
             }
 
             let handle = try FileHandle(forWritingTo: tempURL)
@@ -45,11 +59,7 @@ public struct AudioSourceFactory {
 
             let totalSamples: Int
             do {
-                totalSamples = try streamConvert(
-                    audioFile: audioFile,
-                    converter: converter,
-                    handle: handle
-                )
+                totalSamples = try convert(audioFile, converter, handle)
             } catch {
                 logger.error("Streaming conversion failed before file mapping: \(error.localizedDescription)")
                 throw error
@@ -65,6 +75,7 @@ public struct AudioSourceFactory {
             logger.debug("Streaming audio total samples=\(totalSamples)")
 
             let mappedData = try Data(contentsOf: tempURL, options: [.mappedIfSafe])
+            try Task.checkCancellation()
             let source = DiskBackedAudioSampleSource(mappedData: mappedData, fileURL: tempURL)
 
             if source.sampleCount != totalSamples {
@@ -74,7 +85,10 @@ public struct AudioSourceFactory {
             }
 
             let duration = Date().timeIntervalSince(startTime)
+            sourceOwnsFile = true
             return (source, duration)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch let streamingError as AudioSourceError {
             throw streamingError
         } catch {
@@ -91,7 +105,7 @@ public struct AudioSourceFactory {
         return tempDirectory.appendingPathComponent("fluidaudio-streaming-\(identifier).raw")
     }
 
-    private func streamConvert(
+    func streamConvert(
         audioFile: AVAudioFile,
         converter: AVAudioConverter,
         handle: FileHandle
@@ -160,6 +174,7 @@ public struct AudioSourceFactory {
         }
 
         while true {
+            try Task.checkCancellation()
             outputBuffer.frameLength = 0
             var conversionError: NSError?
             let status = converter.convert(
