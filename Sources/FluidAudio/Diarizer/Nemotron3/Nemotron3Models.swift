@@ -198,11 +198,11 @@ public struct Nemotron3Models {
         try fm.removeItem(at: repoDirectory)
     }
 
-    private static func load(
+    public static func load(
         config: Nemotron3Config,
         modelURL requestedModelURL: URL,
         assetsDirectory directory: URL,
-        computeUnits: MLComputeUnits
+        computeUnits: MLComputeUnits = .all
     ) async throws -> Nemotron3Models {
         let start = Date()
 
