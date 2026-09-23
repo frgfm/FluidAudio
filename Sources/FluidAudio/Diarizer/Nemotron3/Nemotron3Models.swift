@@ -149,9 +149,10 @@ public struct Nemotron3Models {
         // serving the old model indefinitely with no error.
         try discardStaleCache(at: repoDirectory)
 
-        // A compiled bundle is complete once its manifest is on disk; partial downloads
-        // resume file-by-file inside `download(subdirectory:)`.
-        if !fm.fileExists(atPath: modelURL.appendingPathComponent("coremldata.bin").path) {
+        // The manifest can arrive before the model graph and weights. Resume incomplete
+        // bundles file-by-file instead of treating the manifest as a complete download.
+        let bundleFiles = ["coremldata.bin", "model.mil", "weights/weight.bin"]
+        if bundleFiles.contains(where: { !fm.fileExists(atPath: modelURL.appendingPathComponent($0).path) }) {
             logger.info("Downloading \(bundlePath) from \(repo.remotePath)...")
             try await ModelHub.download(
                 repo, subdirectory: bundlePath, to: repoDirectory, progressHandler: progressHandler)
